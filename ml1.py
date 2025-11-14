@@ -1,65 +1,72 @@
+import pandas as pd
 import numpy as np
+import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
 
-def function(x):
-    return (x + 3)**2
+# Load dataset
+df = pd.read_csv("uber.csv")
 
-def gradient(x):
-    return 2 * (x + 3)
+# Basic info
+df = df.dropna()
 
-def gradient_descent(initial_x, learning_rate, num_iterations):
-    x = initial_x
-    x_history = [x]
-    y_history = [function(x)]
-    
-    for i in range(num_iterations):
-        grad = gradient(x)
-        x = x - learning_rate * grad
-        x_history.append(x)
-        y_history.append(function(x))
+# Calculate simple distance
+df["distance"] = (
+    ((df['dropoff_latitude'] - df['pickup_latitude'])**2 +
+     (df['dropoff_longitude'] - df['pickup_longitude'])**2) * 0.5
+)
 
-        if (i + 1) % 10 == 0:
-            print(f"Iteration {i+1}: x = {x:.6f}, y = {function(x):.6f}, gradient = {grad:.6f}")
-    
-    return x, x_history, y_history
+# Filter outliers
+df = df[(df['fare_amount'] > 0) & (df['fare_amount'] < 100)]
+df = df[(df['passenger_count'] > 0) & (df['passenger_count'] <= 6)]
+df = df[df['distance'] < 5]
 
+# Extract datetime features
+df['pickup_datetime'] = pd.to_datetime(df['pickup_datetime'])
+df['hour'] = df['pickup_datetime'].dt.hour
+df['day_of_week'] = df['pickup_datetime'].dt.dayofweek
 
-initial_x = 2
-learning_rate = 0.1
-num_iterations = 50
-
-final_x, x_history, y_history = gradient_descent(initial_x, learning_rate, num_iterations)
-
-print("\n--- Results ---")
-print(f"Starting point: x = {initial_x}")
-print(f"Final point: x = {final_x:.6f}")
-print(f"Local minimum: y = {function(final_x):.6f}")
-print(f"Number of iterations: {num_iterations}")
-
-
-# -------- PLOTS ----------
-plt.figure(figsize=(12, 5))
-
-# Plot 1: Function curve + descent path
-plt.subplot(1, 2, 1)
-x_range = np.linspace(-6, 3, 100)
-y_range = function(x_range)
-plt.plot(x_range, y_range, 'b-', label='y = (x+3)²')
-plt.plot(x_history, y_history, 'ro-', markersize=4, label='Descent Path')
-plt.plot(final_x, function(final_x), 'g*', markersize=15, label='Local Minimum')
-plt.xlabel('x')
-plt.ylabel('y')
-plt.title('Gradient Descent Convergence')
-plt.legend()
-plt.grid(True)
-
-# Plot 2: Cost function convergence
-plt.subplot(1, 2, 2)
-plt.plot(range(len(y_history)), y_history, 'r-')
-plt.xlabel('Iteration')
-plt.ylabel('Function Value')
-plt.title('Cost Function Convergence')
-plt.grid(True)
-
-plt.tight_layout()
+# Boxplot
+sns.boxplot(x=df['fare_amount'])
+plt.title("Boxplot for Fare Amount (Outliers)")
 plt.show()
+
+# Correlation heatmap
+corr = df[['fare_amount', 'distance', 'passenger_count', 'hour', 'day_of_week']].corr()
+sns.heatmap(corr, annot=True, cmap='coolwarm')
+plt.title("Correlation Matrix")
+plt.show()
+
+# Features & target
+X = df[['distance', 'passenger_count', 'hour', 'day_of_week']]
+y = df['fare_amount']
+
+# Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+# Linear Regression
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+y_pred_lr = lr.predict(X_test)
+
+# Random Forest Regression
+rf = RandomForestRegressor(n_estimators=100, random_state=42)
+rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
+
+# Evaluation function
+def evaluate(y_true, y_pred, model_name):
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    r2 = r2_score(y_true, y_pred)
+    print(f"{model_name} Results:")
+    print(f"  R² Score: {r2:.4f}")
+    print(f"  RMSE: {rmse:.4f}\n")
+
+# Results
+evaluate(y_test, y_pred_lr, "Linear Regression")
+evaluate(y_test, y_pred_rf, "Random Forest Regression")
